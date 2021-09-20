@@ -63,7 +63,7 @@ namespace CCMerger
             logBox.Checked = lg;
         }
 
-        void ThreadedStuff()
+        async void ThreadedStuff()
         {
             failed = false;
             trace = "";
@@ -82,12 +82,13 @@ namespace CCMerger
             downloadsDir = downloadsDir.Replace("/", "\\");
             startedWriting = false;
             var packageCount = 0; //For logging purposes
-            foreach (var element in Delimon.Win32.IO.Directory.GetFiles(downloadsDir, "*.package", Delimon.Win32.IO.SearchOption.AllDirectories))
+            // foreach (var element in Delimon.Win32.IO.Directory.GetFiles(downloadsDir, "*.package", Delimon.Win32.IO.SearchOption.AllDirectories))
+            foreach (var element in Directory.GetFiles(downloadsDir, "*.package", SearchOption.AllDirectories))
             {
                 try
                 {
                     var pack = new DBPFFile(element);
-                    currentPackSize += new Delimon.Win32.IO.FileInfo(element).Length;
+                    currentPackSize += new FileInfo(element).Length;
                     currentFileAmount += pack.NumEntries;
                     if ((currentPackSize >= packageMaxSize && packageMaxSize != 0) || (currentFileAmount >= packageMaxFileAmount && packageMaxFileAmount != 0))
                     {
@@ -127,12 +128,13 @@ namespace CCMerger
             }
             fileAmount *= 2;
             startedWriting = true;
-            byte[] dirfil = null;
+            // byte[] dirfil = null;
             try
             {
-                for (var i = 0; i < pendingPackages.Count; i++)
-                {
-                    var packToWrite = pendingPackages[i];
+                // Static local method not supported until C# 8
+                // However, temporarily making the method static will highlight compile errors for usage
+                // of this-scoped stuff
+                /* static */ void RunLoopStep(int index, PackageToWrite packToWrite, string target, Action increaseCurrentFile) {
                     var dirStream = new MemoryStream();
                     var dirWriter = new BinaryWriter(dirStream);
                     foreach (var packa in packToWrite.packages)
@@ -155,10 +157,10 @@ namespace CCMerger
                             }
                         }
                     }
-                    dirfil = dirStream.ToArray();
+                    var dirfil = dirStream.ToArray();
                     dirWriter.Dispose();
                     dirStream.Dispose();
-                    var fname = Path.Combine(Path.GetDirectoryName(target), Path.GetFileNameWithoutExtension(target) + i.ToString() + ".package");
+                    var fname = Path.Combine(Path.GetDirectoryName(target), Path.GetFileNameWithoutExtension(target) + index.ToString() + ".package");
                     packToWrite.name = fname;
                     var mStream = new FileStream(fname, FileMode.Create);
                     var mWriter = new BinaryWriter(mStream);
@@ -205,7 +207,8 @@ namespace CCMerger
                     long dirFilOffset = 0;
                     if (packToWrite.compress)
                     {
-                        currentFile += 1;
+                        // currentFile += 1;
+                        increaseCurrentFile();
                         //TypeID
                         mWriter.Write(0xE86B1EEF);
                         //GroupID
@@ -227,7 +230,8 @@ namespace CCMerger
                         {
                             if (element.Value.TypeID != 0xE86B1EEF)
                             {
-                                currentFile += 1;
+                                // currentFile += 1;
+                                increaseCurrentFile();
                                 //TypeID
                                 mWriter.Write(element.Value.TypeID);
                                 //GroupID
@@ -269,7 +273,8 @@ namespace CCMerger
                             System.GC.Collect(); // Just in case?
                             if (element.Value.TypeID != 0xE86B1EEF)
                             {
-                                currentFile += 1;
+                                // currentFile += 1;
+                                increaseCurrentFile();
                                 lastPos = mStream.Position;
                                 mStream.Position = element.Value.writeOff;
                                 mWriter.Write((int)lastPos);
@@ -281,7 +286,25 @@ namespace CCMerger
                     }
                     mWriter.Dispose();
                     mStream.Dispose();
+                    
                 }
+
+                var tasks = new List<Task>();
+                for (var i = 0; i < pendingPackages.Count; i++) {
+                    // Task.Run might start a task later, so the loop's i will have changed by then.
+                    // Declaring capturedI makes a copy of i that will not be changed by the loop,
+                    // therefore making it safe to use inside Task.Run's Action.
+                    var capturedI = i; 
+                    
+                    tasks.Add(Task.Run(() => RunLoopStep(
+                        capturedI,
+                        pendingPackages[capturedI], 
+                        target,
+                        () => Invoke((MethodInvoker)(() => currentFile += 1))
+                    )));
+                }
+
+                await Task.WhenAll(tasks);
             }
             catch(Exception e)
             {

@@ -68,7 +68,8 @@ namespace FSO.Files.Formats.DBPF
         /// <param name="file">The path to an DBPF archive.</param>
         public DBPFFile(string file)
         {
-            var stream = Delimon.Win32.IO.File.OpenRead(file);
+            // var stream = Delimon.Win32.IO.File.OpenRead(file);
+            var stream = File.OpenRead(file);
             fname = file;
             Read(stream);
         }
